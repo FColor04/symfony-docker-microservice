@@ -16,7 +16,7 @@ if [ "$1" = 'frankenphp' ] || [ "$1" = 'php' ] || [ "$1" = 'bin/console' ]; then
 		composer require "php:>=$PHP_VERSION" runtime/frankenphp-symfony
 		composer config --json extra.symfony.docker 'true'
 
-		if grep -q ^DATABASE_URL= .env; then
+		if [ -n "$DATABASE_URL" ]; then
 			echo 'To finish the installation please press Ctrl+C to stop Docker Compose and run: docker compose up --build --wait'
 			sleep infinity
 		fi
@@ -30,7 +30,7 @@ if [ "$1" = 'frankenphp' ] || [ "$1" = 'php' ] || [ "$1" = 'bin/console' ]; then
 	# Or about an error in project initialization
 	php bin/console -V
 
-	if grep -q ^DATABASE_URL= .env; then
+	if [ -n "$DATABASE_URL" ]; then
 		echo 'Waiting for database to be ready...'
 		ATTEMPTS_LEFT_TO_REACH_DATABASE=60
 		until [ $ATTEMPTS_LEFT_TO_REACH_DATABASE -eq 0 ] || DATABASE_ERROR=$(php bin/console dbal:run-sql -q "SELECT 1" 2>&1); do
@@ -63,4 +63,17 @@ if [ "$1" = 'frankenphp' ] || [ "$1" = 'php' ] || [ "$1" = 'bin/console' ]; then
 	echo 'PHP app ready!'
 fi
 
+# Start supervisor daemon in the background
+if [ -f /etc/supervisor/conf.d/messenger-worker.conf ]; then
+	echo "Starting supervisor daemon..."
+	/usr/bin/supervisord -c /etc/supervisor/supervisord.conf &
+	sleep 2
+	composer update
+	supervisorctl reread
+	supervisorctl update
+	supervisorctl start messenger-consume:*
+	echo "Supervisor started with messenger workers"
+fi
+
+composer update
 exec docker-php-entrypoint "$@"
